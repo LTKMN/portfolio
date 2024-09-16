@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Money Timer</title>
+<title>counter</title>
 <style>
     /* Center content vertically and horizontally */
     body {
@@ -30,13 +30,11 @@
 </head>
 <body>
 
-<button id="startButton">Start Timer</button>
+<button id="startButton">GO</button>
 <div id="display">$0.00</div>
 
 <script>
-    // === Configuration ===
-    // Set the rate at which the money counts up (dollars per second)
-    var rate = 0.05; // Change this value to set your desired rate
+    var rate = 0.0091885;
 
     // === Variables ===
     var timerStarted = false;
@@ -49,11 +47,11 @@
             timerStarted = true;
             startTime = new Date().getTime();
             intervalId = setInterval(updateDisplay, 100); // Update every 100 milliseconds
-            this.textContent = 'Stop Timer';
+            this.textContent = 'STOP';
         } else {
             timerStarted = false;
             clearInterval(intervalId);
-            this.textContent = 'Start Timer';
+            this.textContent = 'RESET';
         }
     });
 
