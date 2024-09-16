@@ -72,7 +72,7 @@
                 timer = setInterval(function() {
                     var elapsed = (Date.now() - startTime) / 1000;
                     var money = totalMoney + (rate * elapsed);
-                    counter.textContent = '$' + money.toFixed(2);
+                    counter.textContent = '$' + money.toFixed(3);
                 }, 100); // Update every 100 milliseconds
                 controlButton.textContent = 'STOP';
             } else if (controlButton.textContent === 'STOP') {
@@ -80,12 +80,12 @@
                 clearInterval(timer);
                 var elapsed = (Date.now() - startTime) / 1000;
                 totalMoney += rate * elapsed;
-                counter.textContent = '$' + totalMoney.toFixed(4);
+                counter.textContent = '$' + totalMoney.toFixed(3);
                 controlButton.textContent = 'RESET';
             } else if (controlButton.textContent === 'RESET') {
                 // Reset the counter
                 totalMoney = 0;
-                counter.textContent = '$0.0000';
+                counter.textContent = '$0.000';
                 controlButton.textContent = 'GO';
             }
         });
