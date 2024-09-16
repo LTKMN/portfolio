@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <title>Money Counter</title>
     <style>
+        /* Import the Handjet font */
+        @import url('https://fonts.googleapis.com/css2?family=Handjet:wght,ELGR,ELSH@500,2,16&display=swap');
+
         /* Reset default margins and paddings */
         * {
             margin: 0;
@@ -23,7 +26,15 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 10vw; /* Adjust font size relative to viewport width */
+            font-size: 10vw; /* Adjust font size as needed */
+            width: 100%;
+            font-family: "Handjet", sans-serif;
+            font-optical-sizing: auto;
+            font-weight: 500;
+            font-style: normal;
+            font-variation-settings:
+                "ELGR" 2,
+                "ELSH" 16;
         }
 
         /* Style the control button */
@@ -43,6 +54,8 @@
 
     <script>
         var rate = 0.03870968;
+
+        // === Variables ===
         var totalMoney = 0;
         var timer = null;
         var startTime = null;
