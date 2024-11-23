@@ -3,29 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GLB to Bluesky Converter</title>
-    
-    <!-- Import libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.161.0/three.min.js"></script>
-    <script src="https://unpkg.com/three@0.161.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script src="https://unpkg.com/three@0.161.0/examples/js/exporters/GLTFExporter.js"></script>
-    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <title>GLB to Text Converter</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
 </head>
-<body><!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GLB to Bluesky Converter</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
-</head>
-<body>
+<body class="bg-gray-50">
     <div id="root"></div>
 
-    <!-- Load libraries in sequence -->
     <script type="importmap">
     {
         "imports": {
@@ -36,476 +19,251 @@
     </script>
 
     <script type="module">
-        // Import required modules
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
-        // Wait for other dependencies to load
-        window.addEventListener('load', async function() {
+        window.addEventListener('load', async () => {
             const scripts = [
                 "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js",
                 "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js",
                 "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"
             ];
 
-            // Make THREE, GLTFLoader, and GLTFExporter globally available
             window.THREE = THREE;
             window.GLTFLoader = GLTFLoader;
             window.GLTFExporter = GLTFExporter;
 
-            function loadScript(src) {
+            await Promise.all(scripts.map(src => {
                 return new Promise((resolve, reject) => {
                     const script = document.createElement('script');
                     script.src = src;
                     script.onload = resolve;
-                    script.onerror = (e) => {
-                        console.error(`Failed to load script: ${src}`, e);
-                        reject(new Error(`Failed to load script: ${src}`));
-                    };
+                    script.onerror = reject;
                     document.body.appendChild(script);
                 });
-            }
+            }));
 
-            try {
-                await Promise.all(scripts.map(loadScript));
-                console.log('All scripts loaded successfully');
-                // Now start the app
-                const appScript = document.createElement('script');
-                appScript.type = 'text/babel';
-                appScript.textContent = `
-                    const { useState } = React;
+            const appScript = document.createElement('script');
+            appScript.type = 'text/babel';
+            appScript.textContent = `
+                const { useState, useCallback } = React;
 
-                    function App() {
-                        const [file, setFile] = useState(null);
-                        const [result, setResult] = useState(null);
-                        const [copied, setCopied] = useState(false);
-                        const [processing, setProcessing] = useState(false);
-
-                        const processFile = async () => {
-                            if (!file) return;
-                            
-                            setProcessing(true);
-                            
-                            try {
-                                const buffer = await file.arrayBuffer();
-                                const originalSize = buffer.byteLength;
-                                
-                                // Load and optimize using THREE.js
-                                const loader = new THREE.GLTFLoader();
-                                const gltf = await new Promise((resolve, reject) => {
-                                    loader.parse(buffer, '', resolve, reject);
-                                });
-
-                                // Get the first mesh
-                                const mesh = gltf.scenes[0].children[0];
-                                const geometry = mesh.geometry;
-
-                                // Basic optimization
-                                const positions = geometry.attributes.position.array;
-                                const optimizedPositions = new Uint16Array(positions.length);
-                                for (let i = 0; i < positions.length; i++) {
-                                    optimizedPositions[i] = Math.round((positions[i] + 1) * 32767);
-                                }
-
-                                // Create optimized geometry
-                                const optimizedGeometry = new THREE.BufferGeometry();
-                                optimizedGeometry.setAttribute('position', 
-                                    new THREE.Uint16BufferAttribute(optimizedPositions, 3));
-
-                                // Create new mesh and scene
-                                const optimizedMesh = new THREE.Mesh(optimizedGeometry);
-                                const scene = new THREE.Scene();
-                                scene.add(optimizedMesh);
-
-                                // Export to GLB
-                                const exporter = new THREE.GLTFExporter();
-                                const optimizedGLB = await new Promise((resolve) => {
-                                    exporter.parse(scene, resolve, { 
-                                        binary: true,
-                                        includeCustomExtensions: false,
-                                        embedImages: false
-                                    });
-                                });
-
-                                // Convert to base64
-                                const base64 = btoa(String.fromCharCode(...new Uint8Array(optimizedGLB)));
-                                const compressedBase64 = base64.replace(/[+/]|=+$/g, '');
-                                
-                                const stats = {
-                                    originalSize,
-                                    compressedSize: optimizedGLB.byteLength,
-                                    encodedLength: compressedBase64.length,
-                                    willFit: compressedBase64.length <= 2000,
-                                    compressionRatio: ((optimizedGLB.byteLength / originalSize) * 100).toFixed(1)
-                                };
-                                
-                                setResult({
-                                    altText: \`GLB1|\${compressedBase64}\`,
-                                    stats
-                                });
-                            } catch (error) {
-                                console.error('Processing failed:', error);
-                                alert('Error: ' + error.message);
-                            } finally {
-                                setProcessing(false);
-                            }
-                        };
-
-                        const handleFile = async (event) => {
-                            event.preventDefault();
-                            const newFile = event.target.files?.[0] || event.dataTransfer?.files?.[0];
-                            if (!newFile || !newFile.name.toLowerCase().endsWith('.glb')) return;
-                            setFile(newFile);
-                            setResult(null);
-                        };
-
-                        const copyToClipboard = async () => {
-                            if (result?.altText) {
-                                await navigator.clipboard.writeText(result.altText);
-                                setCopied(true);
-                                setTimeout(() => setCopied(false), 2000);
-                            }
-                        };
-
-                        return (
-                            <div className="max-w-2xl mx-auto p-6">
-                                <h1 className="text-2xl font-bold mb-4">GLB to Bluesky Converter</h1>
-                                
-                                <div 
-                                    className="border-2 border-dashed rounded-lg p-8 text-center mb-6"
-                                    onDragOver={(e) => e.preventDefault()}
-                                    onDrop={(e) => {
-                                        e.preventDefault();
-                                        handleFile(e);
-                                    }}
-                                >
-                                    <input
-                                        type="file"
-                                        accept=".glb"
-                                        onChange={handleFile}
-                                        className="hidden"
-                                        id="file-upload"
-                                    />
-                                    <label htmlFor="file-upload" className="cursor-pointer">
-                                        <div className="text-4xl mb-2">⬆️</div>
-                                        <div className="text-sm text-gray-600">
-                                            Drop GLB file here or click to upload
-                                        </div>
-                                        {file && (
-                                            <div className="mt-2 text-sm text-gray-500">
-                                                Selected: {file.name}
-                                            </div>
-                                        )}
-                                    </label>
-                                </div>
-
-                                {file && !processing && !result && (
-                                    <button
-                                        onClick={processFile}
-                                        className="w-full py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600 mb-6"
-                                    >
-                                        Process GLB
-                                    </button>
-                                )}
-
-                                {processing && (
-                                    <div className="text-center py-4 text-gray-600">
-                                        Processing file...
-                                    </div>
-                                )}
-
-                                {result && (
-                                    <div className="space-y-4">
-                                        <div className="bg-gray-50 p-4 rounded-lg">
-                                            <div>Original size: {(result.stats.originalSize / 1024).toFixed(2)} KB</div>
-                                            <div>Compressed size: {(result.stats.compressedSize / 1024).toFixed(2)} KB</div>
-                                            <div>Compression ratio: {result.stats.compressionRatio}%</div>
-                                            <div>Encoded length: {result.stats.encodedLength} characters</div>
-                                            <div className={result.stats.willFit ? "text-green-600" : "text-red-600"}>
-                                                {result.stats.willFit ? "Will fit in alt text" : "Too large for alt text"}
-                                            </div>
-                                        </div>
-
-                                        {result.stats.willFit && (
-                                            <div className="border rounded-lg p-4">
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <div className="font-medium">Encoded Alt Text</div>
-                                                    <button
-                                                        onClick={copyToClipboard}
-                                                        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-                                                    >
-                                                        {copied ? '✓ Copied!' : 'Copy'}
-                                                    </button>
-                                                </div>
-                                                <div className="text-sm text-gray-600 break-all">
-                                                    {result.altText.slice(0, 100)}...
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {result && (
-                                    <button
-                                        onClick={() => {
-                                            setFile(null);
-                                            setResult(null);
-                                        }}
-                                        className="mt-4 w-full py-2 px-4 border border-gray-300 rounded hover:bg-gray-50"
-                                    >
-                                        Process Another File
-                                    </button>
-                                )}
-                            </div>
-                        );
-                    }
-
-                    const root = ReactDOM.createRoot(document.getElementById('root'));
-                    root.render(<App />);
-                `;
-                document.body.appendChild(appScript);
-            } catch (error) {
-                console.error('Script loading failed:', error);
-                alert('Failed to load required scripts. Please check the console for details.');
-            }
-        });
-    </script>
-</body>
-</html>
-    <div id="root"></div>
-    
-    <script type="text/babel">
-        // Make THREE available to our React code
-        const { GLTFLoader } = THREE;
-        const { GLTFExporter } = THREE;
-        
-        const { useState } = React;
-
-        function App() {
-            const [file, setFile] = useState(null);
-            const [result, setResult] = useState(null);
-            const [copied, setCopied] = useState(false);
-            const [processing, setProcessing] = useState(false);
-
-            const optimizeGeometry = (geometry) => {
-                // Convert to non-indexed if it isn't already
-                let nonIndexed = geometry.index !== null ? 
-                    geometry.toNonIndexed() : 
-                    geometry.clone();
-
-                // Optimize normal and position precision
-                const positions = nonIndexed.attributes.position.array;
-                const normals = nonIndexed.attributes.normal?.array;
-
-                // Quantize positions to 16-bit
-                const quantizedPositions = new Uint16Array(positions.length);
-                for (let i = 0; i < positions.length; i++) {
-                    quantizedPositions[i] = Math.round((positions[i] + 1) * 32767);
-                }
-                nonIndexed.setAttribute('position', new THREE.Uint16BufferAttribute(quantizedPositions, 3));
-
-                // Quantize normals to 8-bit
-                if (normals) {
-                    const quantizedNormals = new Uint8Array(normals.length);
-                    for (let i = 0; i < normals.length; i++) {
-                        quantizedNormals[i] = Math.round((normals[i] * 0.5 + 0.5) * 255);
-                    }
-                    nonIndexed.setAttribute('normal', new THREE.Uint8BufferAttribute(quantizedNormals, 3));
-                }
-
-                return nonIndexed;
-            };
-
-            const processFile = async () => {
-                if (!file) return;
-                
-                setProcessing(true);
-                
-                try {
-                    const buffer = await file.arrayBuffer();
-                    const originalSize = buffer.byteLength;
-
-                    // Load the GLB
-                    const loader = new GLTFLoader();
-                    const gltf = await new Promise((resolve, reject) => {
-                        loader.parse(buffer, '', resolve, reject);
-                    });
-
-                    // Get the first mesh and optimize its geometry
-                    const mesh = gltf.scenes[0].children[0];
-                    const optimizedGeometry = optimizeGeometry(mesh.geometry);
-
-                    // Create new mesh with optimized geometry
-                    const optimizedMesh = new THREE.Mesh(optimizedGeometry);
-                    const scene = new THREE.Scene();
-                    scene.add(optimizedMesh);
-
-                    // Export back to GLB
-                    const exporter = new GLTFExporter();
-                    const optimizedGLB = await new Promise((resolve) => {
-                        exporter.parse(scene, resolve, { 
-                            binary: true,
-                            includeCustomExtensions: false,
-                            embedImages: false,
-                            forceIndices: true
-                        });
-                    });
-
-                    // Convert to base64
-                    const base64 = btoa(String.fromCharCode(...new Uint8Array(optimizedGLB)));
-                    const compressedBase64 = base64.replace(/[+/]|=+$/g, '');
-                    
-                    const stats = {
-                        originalSize,
-                        compressedSize: optimizedGLB.byteLength,
-                        encodedLength: compressedBase64.length,
-                        willFit: compressedBase64.length <= 2000,
-                        compressionRatio: ((optimizedGLB.byteLength / originalSize) * 100).toFixed(1)
-                    };
-                    
-                    setResult({
-                        altText: `GLB1|${compressedBase64}`,
-                        stats
-                    });
-                } catch (error) {
-                    console.error('Processing failed:', error);
-                    alert('Error processing file: ' + error.message);
-                } finally {
-                    setProcessing(false);
-                }
-            };
-
-            const handleFile = async (event) => {
-                event.preventDefault();
-                const newFile = event.target.files?.[0] || event.dataTransfer?.files?.[0];
-                if (!newFile || !newFile.name.toLowerCase().endsWith('.glb')) return;
-                setFile(newFile);
-                setResult(null);
-            };
-
-            const copyToClipboard = async () => {
-                if (result?.altText) {
-                    await navigator.clipboard.writeText(result.altText);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                }
-            };
-
-            return (
-                <div className="max-w-2xl mx-auto p-6">
-                    <h1 className="text-2xl font-bold mb-4">GLB to Bluesky Converter</h1>
-                    
-                    {/* Upload */}
+                const FileUpload = ({ onFileSelect, selectedFile }) => (
                     <div 
-                        className="border-2 border-dashed rounded-lg p-8 text-center mb-6"
+                        className="border-2 border-dashed rounded-lg p-8 text-center mb-6 bg-white"
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => {
                             e.preventDefault();
-                            handleFile(e);
+                            onFileSelect(e);
                         }}
                     >
                         <input
                             type="file"
                             accept=".glb"
-                            onChange={handleFile}
+                            onChange={onFileSelect}
                             className="hidden"
                             id="file-upload"
                         />
-                        <label htmlFor="file-upload" className="cursor-pointer">
-                            <div className="text-4xl mb-2">⬆️</div>
+                        <label htmlFor="file-upload" className="cursor-pointer block">
+                            <div className="text-4xl mb-2">📁</div>
                             <div className="text-sm text-gray-600">
                                 Drop GLB file here or click to upload
                             </div>
-                            {file && (
+                            {selectedFile && (
                                 <div className="mt-2 text-sm text-gray-500">
-                                    Selected: {file.name}
+                                    Selected: {selectedFile.name}
                                 </div>
                             )}
                         </label>
                     </div>
+                );
 
-                    {/* Process Button */}
-                    {file && !processing && !result && (
-                        <button
-                            onClick={processFile}
-                            className="w-full py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600 mb-6"
-                        >
-                            Process GLB
-                        </button>
-                    )}
+                const ProcessingStatus = () => (
+                    <div className="text-center py-4 text-gray-600 flex items-center justify-center">
+                        <svg className="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Processing file...
+                    </div>
+                );
 
-                    {/* Processing State */}
-                    {processing && (
-                        <div className="text-center py-4 text-gray-600">
-                            Processing file...
-                        </div>
-                    )}
-
-                    {/* Results */}
-                    {result && (
-                        <div className="space-y-4">
-                            {/* Stats */}
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <div>Original size: {(result.stats.originalSize / 1024).toFixed(2)} KB</div>
-                                <div>Compressed size: {(result.stats.compressedSize / 1024).toFixed(2)} KB</div>
-                                <div>Compression ratio: {result.stats.compressionRatio}%</div>
-                                <div>Encoded length: {result.stats.encodedLength} characters</div>
-                                <div className={result.stats.willFit ? "text-green-600" : "text-red-600"}>
-                                    {result.stats.willFit ? "Will fit in alt text" : "Too large for alt text"}
+                const ResultsPanel = ({ result, onCopy, copied, onReset }) => (
+                    <div className="space-y-4">
+                        <div className="bg-white p-4 rounded-lg shadow-sm">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <div className="text-sm text-gray-500">Original size</div>
+                                    <div className="font-medium">{(result.stats.originalSize / 1024).toFixed(2)} KB</div>
+                                </div>
+                                <div>
+                                    <div className="text-sm text-gray-500">Compressed size</div>
+                                    <div className="font-medium">{(result.stats.compressedSize / 1024).toFixed(2)} KB</div>
+                                </div>
+                                <div>
+                                    <div className="text-sm text-gray-500">Compression ratio</div>
+                                    <div className="font-medium">{result.stats.compressionRatio}%</div>
+                                </div>
+                                <div>
+                                    <div className="text-sm text-gray-500">Encoded length</div>
+                                    <div className="font-medium">{result.stats.encodedLength} chars</div>
                                 </div>
                             </div>
-
-                            {/* Alt Text */}
-                            {result.stats.willFit && (
-                                <div className="border rounded-lg p-4">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <div className="font-medium">Encoded Alt Text</div>
-                                        <button
-                                            onClick={copyToClipboard}
-                                            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-                                        >
-                                            {copied ? '✓ Copied!' : 'Copy'}
-                                        </button>
-                                    </div>
-                                    <div className="text-sm text-gray-600 break-all">
-                                        {result.altText.slice(0, 100)}...
-                                    </div>
-                                </div>
-                            )}
+                            <div className={\`mt-4 text-center font-medium \${result.stats.willFit ? "text-green-600" : "text-red-600"}\`}>
+                                {result.stats.willFit ? "✓ Will fit in alt text" : "✗ Too large for alt text"}
+                            </div>
                         </div>
-                    )}
 
-                    {/* Reset Button */}
-                    {result && (
+                        {result.stats.willFit && (
+                            <div className="bg-white rounded-lg p-4 shadow-sm">
+                                <div className="flex justify-between items-center mb-2">
+                                    <div className="font-medium">Encoded Alt Text</div>
+                                    <button
+                                        onClick={onCopy}
+                                        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                                    >
+                                        {copied ? '✓ Copied!' : 'Copy'}
+                                    </button>
+                                </div>
+                                <div className="text-sm text-gray-600 break-all bg-gray-50 p-2 rounded">
+                                    {result.altText.slice(0, 100)}...
+                                </div>
+                            </div>
+                        )}
+
                         <button
-                            onClick={() => {
-                                setFile(null);
-                                setResult(null);
-                            }}
-                            className="mt-4 w-full py-2 px-4 border border-gray-300 rounded hover:bg-gray-50"
+                            onClick={onReset}
+                            className="w-full py-2 px-4 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
                         >
                             Process Another File
                         </button>
-                    )}
-
-                    <div className="mt-8 text-sm text-gray-600">
-                        <p className="mb-2">Instructions:</p>
-                        <ol className="list-decimal pl-5">
-                            <li>Upload a GLB file</li>
-                            <li>Click "Process GLB"</li>
-                            <li>Copy the encoded alt text (if it fits)</li>
-                            <li>Create a new Bluesky post with an image</li>
-                            <li>Paste the encoded text as the image's alt text</li>
-                        </ol>
                     </div>
-                </div>
-            );
-        }
+                );
 
-        // Render the app
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+                function App() {
+                    const [file, setFile] = useState(null);
+                    const [result, setResult] = useState(null);
+                    const [copied, setCopied] = useState(false);
+                    const [processing, setProcessing] = useState(false);
+
+                    const processFile = async () => {
+                        if (!file) return;
+                        setProcessing(true);
+                        
+                        try {
+                            const buffer = await file.arrayBuffer();
+                            const loader = new THREE.GLTFLoader();
+                            const gltf = await new Promise((resolve, reject) => {
+                                loader.parse(buffer, '', resolve, reject);
+                            });
+
+                            const mesh = gltf.scenes[0].children[0];
+                            const geometry = mesh.geometry;
+
+                            // Optimize vertex positions
+                            const positions = geometry.attributes.position.array;
+                            const optimizedPositions = new Uint16Array(positions.length);
+                            for (let i = 0; i < positions.length; i++) {
+                                optimizedPositions[i] = Math.round((positions[i] + 1) * 32767);
+                            }
+
+                            const optimizedGeometry = new THREE.BufferGeometry();
+                            optimizedGeometry.setAttribute('position', 
+                                new THREE.Uint16BufferAttribute(optimizedPositions, 3));
+
+                            const optimizedMesh = new THREE.Mesh(optimizedGeometry);
+                            const scene = new THREE.Scene();
+                            scene.add(optimizedMesh);
+
+                            const exporter = new THREE.GLTFExporter();
+                            const optimizedGLB = await new Promise((resolve) => {
+                                exporter.parse(scene, resolve, { 
+                                    binary: true,
+                                    includeCustomExtensions: false,
+                                    embedImages: false
+                                });
+                            });
+
+                            const base64 = btoa(String.fromCharCode(...new Uint8Array(optimizedGLB)));
+                            const compressedBase64 = base64.replace(/[+/]|=+$/g, '');
+                            
+                            setResult({
+                                altText: \`GLB1|\${compressedBase64}\`,
+                                stats: {
+                                    originalSize: buffer.byteLength,
+                                    compressedSize: optimizedGLB.byteLength,
+                                    encodedLength: compressedBase64.length,
+                                    willFit: compressedBase64.length <= 2000,
+                                    compressionRatio: ((optimizedGLB.byteLength / originalSize) * 100).toFixed(1)
+                                }
+                            });
+                        } catch (error) {
+                            console.error('Processing failed:', error);
+                            alert('Error processing file: ' + error.message);
+                        } finally {
+                            setProcessing(false);
+                        }
+                    };
+
+                    const handleFile = useCallback((event) => {
+                        const newFile = event.target.files?.[0] || event.dataTransfer?.files?.[0];
+                        if (!newFile || !newFile.name.toLowerCase().endsWith('.glb')) {
+                            alert('Please select a GLB file');
+                            return;
+                        }
+                        setFile(newFile);
+                        setResult(null);
+                    }, []);
+
+                    const copyToClipboard = useCallback(async () => {
+                        if (result?.altText) {
+                            await navigator.clipboard.writeText(result.altText);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                        }
+                    }, [result]);
+
+                    const handleReset = useCallback(() => {
+                        setFile(null);
+                        setResult(null);
+                        setCopied(false);
+                    }, []);
+
+                    return (
+                        <div className="max-w-2xl mx-auto p-6">
+                            <h1 className="text-2xl font-bold mb-6 text-center">GLB to Text Converter</h1>
+                            
+                            <FileUpload onFileSelect={handleFile} selectedFile={file} />
+
+                            {file && !processing && !result && (
+                                <button
+                                    onClick={processFile}
+                                    className="w-full py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors mb-6"
+                                >
+                                    Process GLB
+                                </button>
+                            )}
+
+                            {processing && <ProcessingStatus />}
+
+                            {result && (
+                                <ResultsPanel 
+                                    result={result}
+                                    onCopy={copyToClipboard}
+                                    copied={copied}
+                                    onReset={handleReset}
+                                />
+                            )}
+                        </div>
+                    );
+                }
+
+                const root = ReactDOM.createRoot(document.getElementById('root'));
+                root.render(<App />);
+            `;
+            document.body.appendChild(appScript);
+        });
     </script>
 </body>
 </html>
