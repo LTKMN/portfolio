@@ -8,8 +8,8 @@
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.161.0/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.19.0/meshopt_decoder.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.19.0/meshopt_encoder.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/exporters/GLTFExporter.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
 </head>
 <body>
@@ -18,104 +18,31 @@
     <script type="text/babel">
         const { useState } = React;
 
-        // MeshOpt compression wrapper
-        const optimizeMesh = async (geometry) => {
-            const vertices = geometry.attributes.position.array;
-            const indices = geometry.index ? geometry.index.array : null;
-            
-            // Initialize meshoptimizer
-            await MeshoptEncoder.ready;
-            
-            // Optimize vertices
-            const vertexCount = vertices.length / 3;
-            const optimizedVertices = new Float32Array(vertices);
-            const vertexResult = MeshoptEncoder.encodeVertexBuffer(
-                optimizedVertices, 
-                vertexCount,
-                12, // 3 floats * 4 bytes
-                {
-                    bits: 14, // Precision bits
-                    quality: 1  // Max quality
-                }
-            );
-
-            // Optimize indices if they exist
-            let indexResult = null;
-            if (indices) {
-                const optimizedIndices = new Uint32Array(indices);
-                indexResult = MeshoptEncoder.encodeIndexBuffer(
-                    optimizedIndices,
-                    indices.length,
-                    1 // Max vertex reuse
-                );
-            }
-
-            // Create optimized geometry
-            const optimizedGeometry = new THREE.BufferGeometry();
-            optimizedGeometry.setAttribute(
-                'position',
-                new THREE.Float32BufferAttribute(optimizedVertices, 3)
-            );
-            if (indexResult) {
-                optimizedGeometry.setIndex(
-                    new THREE.Uint32BufferAttribute(indexResult, 1)
-                );
-            }
-
-            return optimizedGeometry;
-        };
-
         function App() {
             const [file, setFile] = useState(null);
             const [result, setResult] = useState(null);
             const [copied, setCopied] = useState(false);
             const [processing, setProcessing] = useState(false);
 
-            const handleFile = async (event) => {
-                event.preventDefault();
-                const file = event.target.files?.[0] || event.dataTransfer?.files?.[0];
-                if (!file || !file.name.toLowerCase().endsWith('.glb')) return;
+            const processFile = async () => {
+                if (!file) return;
                 
-                setFile(file);
                 setProcessing(true);
                 
                 try {
                     const buffer = await file.arrayBuffer();
                     const originalSize = buffer.byteLength;
-
-                    // Load GLB into Three.js
-                    const loader = new THREE.GLTFLoader();
-                    const gltf = await new Promise((resolve, reject) => {
-                        loader.parse(buffer, '', resolve, reject);
-                    });
-
-                    // Get the first mesh
-                    const mesh = gltf.scenes[0].children[0];
                     
-                    // Optimize the geometry
-                    const optimizedGeometry = await optimizeMesh(mesh.geometry);
-                    
-                    // Create new mesh and scene
-                    const optimizedMesh = new THREE.Mesh(optimizedGeometry, mesh.material);
-                    const scene = new THREE.Scene();
-                    scene.add(optimizedMesh);
-
-                    // Export back to GLB
-                    const exporter = new THREE.GLTFExporter();
-                    const optimizedGLB = await new Promise((resolve) => {
-                        exporter.parse(scene, resolve, { binary: true });
-                    });
-
-                    // Convert to base64
-                    const base64 = btoa(String.fromCharCode(...new Uint8Array(optimizedGLB)));
+                    // Simple base64 conversion for now - let's make sure this works first
+                    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
                     const compressedBase64 = base64.replace(/[+/]|=+$/g, '');
                     
                     const stats = {
                         originalSize,
-                        compressedSize: optimizedGLB.byteLength,
+                        compressedSize: buffer.byteLength,
                         encodedLength: compressedBase64.length,
                         willFit: compressedBase64.length <= 2000,
-                        compressionRatio: ((optimizedGLB.byteLength / originalSize) * 100).toFixed(1)
+                        compressionRatio: 100
                     };
                     
                     setResult({
@@ -127,6 +54,14 @@
                 } finally {
                     setProcessing(false);
                 }
+            };
+
+            const handleFile = async (event) => {
+                event.preventDefault();
+                const newFile = event.target.files?.[0] || event.dataTransfer?.files?.[0];
+                if (!newFile || !newFile.name.toLowerCase().endsWith('.glb')) return;
+                setFile(newFile);
+                setResult(null); // Clear previous result
             };
 
             const copyToClipboard = async () => {
@@ -160,7 +95,7 @@
                         <label htmlFor="file-upload" className="cursor-pointer">
                             <div className="text-4xl mb-2">⬆️</div>
                             <div className="text-sm text-gray-600">
-                                {processing ? 'Optimizing mesh...' : 'Drop GLB file here or click to upload'}
+                                Drop GLB file here or click to upload
                             </div>
                             {file && (
                                 <div className="mt-2 text-sm text-gray-500">
@@ -169,6 +104,23 @@
                             )}
                         </label>
                     </div>
+
+                    {/* Process Button */}
+                    {file && !processing && !result && (
+                        <button
+                            onClick={processFile}
+                            className="w-full py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600 mb-6"
+                        >
+                            Process GLB
+                        </button>
+                    )}
+
+                    {/* Processing State */}
+                    {processing && (
+                        <div className="text-center py-4 text-gray-600">
+                            Processing file...
+                        </div>
+                    )}
 
                     {/* Results */}
                     {result && (
@@ -204,10 +156,24 @@
                         </div>
                     )}
 
+                    {/* Reset Button */}
+                    {result && (
+                        <button
+                            onClick={() => {
+                                setFile(null);
+                                setResult(null);
+                            }}
+                            className="mt-4 w-full py-2 px-4 border border-gray-300 rounded hover:bg-gray-50"
+                        >
+                            Process Another File
+                        </button>
+                    )}
+
                     <div className="mt-8 text-sm text-gray-600">
                         <p className="mb-2">Instructions:</p>
                         <ol className="list-decimal pl-5">
                             <li>Upload a GLB file</li>
+                            <li>Click "Process GLB"</li>
                             <li>Copy the encoded alt text (if it fits)</li>
                             <li>Create a new Bluesky post with an image</li>
                             <li>Paste the encoded text as the image's alt text</li>
