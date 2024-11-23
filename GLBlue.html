@@ -8,20 +8,17 @@
 </head>
 <body class="bg-gray-50">
     <div id="root">
-        <!-- Fallback content to verify the page is loading -->
         <div class="max-w-2xl mx-auto p-6">
             <h1 class="text-2xl font-bold mb-6 text-center">Loading...</h1>
         </div>
     </div>
 
-    <!-- Debug console -->
     <div id="debug" class="fixed bottom-0 left-0 right-0 bg-black text-white p-4 font-mono text-sm" style="max-height: 200px; overflow-y: auto;">
         <div>Debug Console:</div>
         <div id="debug-content"></div>
     </div>
 
     <script>
-        // Debug logger
         function debugLog(message) {
             console.log(message);
             const debugContent = document.getElementById('debug-content');
@@ -42,86 +39,46 @@
         debugLog('Page loaded, starting initialization...');
     </script>
 
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
-        }
-    }
-    </script>
-
-    <script type="module">
-        debugLog('Starting module script...');
-
-        try {
-            debugLog('Importing THREE.js...');
-            const THREE = await import('three');
-            debugLog('THREE.js imported successfully');
-
-            debugLog('Importing GLTFLoader...');
-            const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-            debugLog('GLTFLoader imported successfully');
-
-            debugLog('Importing GLTFExporter...');
-            const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
-            debugLog('GLTFExporter imported successfully');
-
-            window.THREE = THREE;
-            window.GLTFLoader = GLTFLoader;
-            window.GLTFExporter = GLTFExporter;
-            debugLog('THREE.js and addons attached to window object');
-
-        } catch (error) {
-            debugLog(`Error importing THREE.js modules: ${error.message}`);
-            throw error;
+    <script>
+        // Load external scripts sequentially
+        async function loadScript(url) {
+            debugLog(`Loading script: ${url}`);
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = url;
+                script.onload = () => {
+                    debugLog(`Successfully loaded: ${url}`);
+                    resolve();
+                };
+                script.onerror = (error) => {
+                    debugLog(`Error loading script: ${url}`);
+                    reject(error);
+                };
+                document.body.appendChild(script);
+            });
         }
 
-        window.addEventListener('load', async () => {
-            debugLog('Window load event fired');
-
-            const scripts = [
-                {
-                    name: "React",
-                    url: "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"
-                },
-                {
-                    name: "ReactDOM",
-                    url: "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"
-                },
-                {
-                    name: "Babel",
-                    url: "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"
-                }
-            ];
-
+        // Initialize application
+        async function initializeApp() {
             try {
-                for (const script of scripts) {
-                    debugLog(`Loading ${script.name}...`);
-                    await new Promise((resolve, reject) => {
-                        const scriptElement = document.createElement('script');
-                        scriptElement.src = script.url;
-                        scriptElement.onload = () => {
-                            debugLog(`${script.name} loaded successfully`);
-                            resolve();
-                        };
-                        scriptElement.onerror = (error) => {
-                            debugLog(`Error loading ${script.name}: ${error}`);
-                            reject(new Error(`Failed to load ${script.name}`));
-                        };
-                        document.body.appendChild(scriptElement);
-                    });
-                }
+                // Load React and Babel first
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js');
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js');
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js');
 
-                debugLog('All external scripts loaded, creating app script...');
+                // Then load Three.js
+                await loadScript('https://unpkg.com/three@0.161.0/build/three.module.js');
+                await loadScript('https://unpkg.com/three@0.161.0/examples/jsm/loaders/GLTFLoader.js');
+                await loadScript('https://unpkg.com/three@0.161.0/examples/jsm/exporters/GLTFExporter.js');
 
+                debugLog('All scripts loaded, initializing React app...');
+
+                // Create and add the React app script
                 const appScript = document.createElement('script');
                 appScript.type = 'text/babel';
                 appScript.textContent = `
                     debugLog('Starting React app initialization...');
                     
-                    const { useState, useCallback } = React;
-
                     function App() {
                         debugLog('Rendering App component');
                         return (
@@ -150,9 +107,14 @@
                 debugLog('App script added to document');
 
             } catch (error) {
-                debugLog(`Script loading failed: ${error.message}`);
+                debugLog(`Initialization failed: ${error.message}`);
                 throw error;
             }
+        }
+
+        // Start initialization immediately
+        initializeApp().catch(error => {
+            debugLog(`Fatal error during initialization: ${error.message}`);
         });
     </script>
 </body>
