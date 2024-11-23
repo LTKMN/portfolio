@@ -7,7 +7,40 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-50">
-    <div id="root"></div>
+    <div id="root">
+        <!-- Fallback content to verify the page is loading -->
+        <div class="max-w-2xl mx-auto p-6">
+            <h1 class="text-2xl font-bold mb-6 text-center">Loading...</h1>
+        </div>
+    </div>
+
+    <!-- Debug console -->
+    <div id="debug" class="fixed bottom-0 left-0 right-0 bg-black text-white p-4 font-mono text-sm" style="max-height: 200px; overflow-y: auto;">
+        <div>Debug Console:</div>
+        <div id="debug-content"></div>
+    </div>
+
+    <script>
+        // Debug logger
+        function debugLog(message) {
+            console.log(message);
+            const debugContent = document.getElementById('debug-content');
+            if (debugContent) {
+                const entry = document.createElement('div');
+                entry.textContent = `${new Date().toISOString()}: ${message}`;
+                debugContent.appendChild(entry);
+                debugContent.scrollTop = debugContent.scrollHeight;
+            }
+        }
+
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            debugLog(`Error: ${msg} at ${url}:${lineNo}:${columnNo}`);
+            if (error && error.stack) debugLog(`Stack: ${error.stack}`);
+            return false;
+        };
+
+        debugLog('Page loaded, starting initialization...');
+    </script>
 
     <script type="importmap">
     {
@@ -19,250 +52,107 @@
     </script>
 
     <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+        debugLog('Starting module script...');
 
-        window.addEventListener('load', async () => {
-            const scripts = [
-                "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js",
-                "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js",
-                "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"
-            ];
+        try {
+            debugLog('Importing THREE.js...');
+            const THREE = await import('three');
+            debugLog('THREE.js imported successfully');
+
+            debugLog('Importing GLTFLoader...');
+            const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+            debugLog('GLTFLoader imported successfully');
+
+            debugLog('Importing GLTFExporter...');
+            const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
+            debugLog('GLTFExporter imported successfully');
 
             window.THREE = THREE;
             window.GLTFLoader = GLTFLoader;
             window.GLTFExporter = GLTFExporter;
+            debugLog('THREE.js and addons attached to window object');
 
-            await Promise.all(scripts.map(src => {
-                return new Promise((resolve, reject) => {
-                    const script = document.createElement('script');
-                    script.src = src;
-                    script.onload = resolve;
-                    script.onerror = reject;
-                    document.body.appendChild(script);
-                });
-            }));
+        } catch (error) {
+            debugLog(`Error importing THREE.js modules: ${error.message}`);
+            throw error;
+        }
 
-            const appScript = document.createElement('script');
-            appScript.type = 'text/babel';
-            appScript.textContent = `
-                const { useState, useCallback } = React;
+        window.addEventListener('load', async () => {
+            debugLog('Window load event fired');
 
-                const FileUpload = ({ onFileSelect, selectedFile }) => (
-                    <div 
-                        className="border-2 border-dashed rounded-lg p-8 text-center mb-6 bg-white"
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => {
-                            e.preventDefault();
-                            onFileSelect(e);
-                        }}
-                    >
-                        <input
-                            type="file"
-                            accept=".glb"
-                            onChange={onFileSelect}
-                            className="hidden"
-                            id="file-upload"
-                        />
-                        <label htmlFor="file-upload" className="cursor-pointer block">
-                            <div className="text-4xl mb-2">📁</div>
-                            <div className="text-sm text-gray-600">
-                                Drop GLB file here or click to upload
-                            </div>
-                            {selectedFile && (
-                                <div className="mt-2 text-sm text-gray-500">
-                                    Selected: {selectedFile.name}
-                                </div>
-                            )}
-                        </label>
-                    </div>
-                );
+            const scripts = [
+                {
+                    name: "React",
+                    url: "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"
+                },
+                {
+                    name: "ReactDOM",
+                    url: "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"
+                },
+                {
+                    name: "Babel",
+                    url: "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"
+                }
+            ];
 
-                const ProcessingStatus = () => (
-                    <div className="text-center py-4 text-gray-600 flex items-center justify-center">
-                        <svg className="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        Processing file...
-                    </div>
-                );
-
-                const ResultsPanel = ({ result, onCopy, copied, onReset }) => (
-                    <div className="space-y-4">
-                        <div className="bg-white p-4 rounded-lg shadow-sm">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <div className="text-sm text-gray-500">Original size</div>
-                                    <div className="font-medium">{(result.stats.originalSize / 1024).toFixed(2)} KB</div>
-                                </div>
-                                <div>
-                                    <div className="text-sm text-gray-500">Compressed size</div>
-                                    <div className="font-medium">{(result.stats.compressedSize / 1024).toFixed(2)} KB</div>
-                                </div>
-                                <div>
-                                    <div className="text-sm text-gray-500">Compression ratio</div>
-                                    <div className="font-medium">{result.stats.compressionRatio}%</div>
-                                </div>
-                                <div>
-                                    <div className="text-sm text-gray-500">Encoded length</div>
-                                    <div className="font-medium">{result.stats.encodedLength} chars</div>
-                                </div>
-                            </div>
-                            <div className={\`mt-4 text-center font-medium \${result.stats.willFit ? "text-green-600" : "text-red-600"}\`}>
-                                {result.stats.willFit ? "✓ Will fit in alt text" : "✗ Too large for alt text"}
-                            </div>
-                        </div>
-
-                        {result.stats.willFit && (
-                            <div className="bg-white rounded-lg p-4 shadow-sm">
-                                <div className="flex justify-between items-center mb-2">
-                                    <div className="font-medium">Encoded Alt Text</div>
-                                    <button
-                                        onClick={onCopy}
-                                        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-                                    >
-                                        {copied ? '✓ Copied!' : 'Copy'}
-                                    </button>
-                                </div>
-                                <div className="text-sm text-gray-600 break-all bg-gray-50 p-2 rounded">
-                                    {result.altText.slice(0, 100)}...
-                                </div>
-                            </div>
-                        )}
-
-                        <button
-                            onClick={onReset}
-                            className="w-full py-2 px-4 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-                        >
-                            Process Another File
-                        </button>
-                    </div>
-                );
-
-                function App() {
-                    const [file, setFile] = useState(null);
-                    const [result, setResult] = useState(null);
-                    const [copied, setCopied] = useState(false);
-                    const [processing, setProcessing] = useState(false);
-
-                    const processFile = async () => {
-                        if (!file) return;
-                        setProcessing(true);
-                        
-                        try {
-                            const buffer = await file.arrayBuffer();
-                            const loader = new THREE.GLTFLoader();
-                            const gltf = await new Promise((resolve, reject) => {
-                                loader.parse(buffer, '', resolve, reject);
-                            });
-
-                            const mesh = gltf.scenes[0].children[0];
-                            const geometry = mesh.geometry;
-
-                            // Optimize vertex positions
-                            const positions = geometry.attributes.position.array;
-                            const optimizedPositions = new Uint16Array(positions.length);
-                            for (let i = 0; i < positions.length; i++) {
-                                optimizedPositions[i] = Math.round((positions[i] + 1) * 32767);
-                            }
-
-                            const optimizedGeometry = new THREE.BufferGeometry();
-                            optimizedGeometry.setAttribute('position', 
-                                new THREE.Uint16BufferAttribute(optimizedPositions, 3));
-
-                            const optimizedMesh = new THREE.Mesh(optimizedGeometry);
-                            const scene = new THREE.Scene();
-                            scene.add(optimizedMesh);
-
-                            const exporter = new THREE.GLTFExporter();
-                            const optimizedGLB = await new Promise((resolve) => {
-                                exporter.parse(scene, resolve, { 
-                                    binary: true,
-                                    includeCustomExtensions: false,
-                                    embedImages: false
-                                });
-                            });
-
-                            const base64 = btoa(String.fromCharCode(...new Uint8Array(optimizedGLB)));
-                            const compressedBase64 = base64.replace(/[+/]|=+$/g, '');
-                            
-                            setResult({
-                                altText: \`GLB1|\${compressedBase64}\`,
-                                stats: {
-                                    originalSize: buffer.byteLength,
-                                    compressedSize: optimizedGLB.byteLength,
-                                    encodedLength: compressedBase64.length,
-                                    willFit: compressedBase64.length <= 2000,
-                                    compressionRatio: ((optimizedGLB.byteLength / originalSize) * 100).toFixed(1)
-                                }
-                            });
-                        } catch (error) {
-                            console.error('Processing failed:', error);
-                            alert('Error processing file: ' + error.message);
-                        } finally {
-                            setProcessing(false);
-                        }
-                    };
-
-                    const handleFile = useCallback((event) => {
-                        const newFile = event.target.files?.[0] || event.dataTransfer?.files?.[0];
-                        if (!newFile || !newFile.name.toLowerCase().endsWith('.glb')) {
-                            alert('Please select a GLB file');
-                            return;
-                        }
-                        setFile(newFile);
-                        setResult(null);
-                    }, []);
-
-                    const copyToClipboard = useCallback(async () => {
-                        if (result?.altText) {
-                            await navigator.clipboard.writeText(result.altText);
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 2000);
-                        }
-                    }, [result]);
-
-                    const handleReset = useCallback(() => {
-                        setFile(null);
-                        setResult(null);
-                        setCopied(false);
-                    }, []);
-
-                    return (
-                        <div className="max-w-2xl mx-auto p-6">
-                            <h1 className="text-2xl font-bold mb-6 text-center">GLB to Text Converter</h1>
-                            
-                            <FileUpload onFileSelect={handleFile} selectedFile={file} />
-
-                            {file && !processing && !result && (
-                                <button
-                                    onClick={processFile}
-                                    className="w-full py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors mb-6"
-                                >
-                                    Process GLB
-                                </button>
-                            )}
-
-                            {processing && <ProcessingStatus />}
-
-                            {result && (
-                                <ResultsPanel 
-                                    result={result}
-                                    onCopy={copyToClipboard}
-                                    copied={copied}
-                                    onReset={handleReset}
-                                />
-                            )}
-                        </div>
-                    );
+            try {
+                for (const script of scripts) {
+                    debugLog(`Loading ${script.name}...`);
+                    await new Promise((resolve, reject) => {
+                        const scriptElement = document.createElement('script');
+                        scriptElement.src = script.url;
+                        scriptElement.onload = () => {
+                            debugLog(`${script.name} loaded successfully`);
+                            resolve();
+                        };
+                        scriptElement.onerror = (error) => {
+                            debugLog(`Error loading ${script.name}: ${error}`);
+                            reject(new Error(`Failed to load ${script.name}`));
+                        };
+                        document.body.appendChild(scriptElement);
+                    });
                 }
 
-                const root = ReactDOM.createRoot(document.getElementById('root'));
-                root.render(<App />);
-            `;
-            document.body.appendChild(appScript);
+                debugLog('All external scripts loaded, creating app script...');
+
+                const appScript = document.createElement('script');
+                appScript.type = 'text/babel';
+                appScript.textContent = `
+                    debugLog('Starting React app initialization...');
+                    
+                    const { useState, useCallback } = React;
+
+                    function App() {
+                        debugLog('Rendering App component');
+                        return (
+                            <div className="max-w-2xl mx-auto p-6">
+                                <h1 className="text-2xl font-bold mb-6 text-center">GLB to Text Converter</h1>
+                                <div className="bg-white p-4 rounded-lg shadow-sm">
+                                    Initial render successful!
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    try {
+                        debugLog('Creating React root...');
+                        const root = ReactDOM.createRoot(document.getElementById('root'));
+                        debugLog('Rendering React app...');
+                        root.render(<App />);
+                        debugLog('React app rendered successfully');
+                    } catch (error) {
+                        debugLog('Error rendering React app: ' + error.message);
+                        throw error;
+                    }
+                `;
+
+                document.body.appendChild(appScript);
+                debugLog('App script added to document');
+
+            } catch (error) {
+                debugLog(`Script loading failed: ${error.message}`);
+                throw error;
+            }
         });
     </script>
 </body>
