@@ -4,19 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GLB to Bluesky Converter</title>
+    
+    <!-- Import libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.161.0/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.161.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://unpkg.com/three@0.161.0/examples/js/exporters/GLTFExporter.js"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.161.0/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/exporters/GLTFExporter.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/utils/BufferGeometryUtils.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
 </head>
 <body>
     <div id="root"></div>
     
     <script type="text/babel">
+        // Make THREE available to our React code
+        const { GLTFLoader } = THREE;
+        const { GLTFExporter } = THREE;
+        
         const { useState } = React;
 
         function App() {
@@ -30,9 +35,6 @@
                 let nonIndexed = geometry.index !== null ? 
                     geometry.toNonIndexed() : 
                     geometry.clone();
-
-                // Merge vertices that are very close to each other
-                nonIndexed = THREE.BufferGeometryUtils.mergeVertices(nonIndexed, 0.001);
 
                 // Optimize normal and position precision
                 const positions = nonIndexed.attributes.position.array;
@@ -67,7 +69,7 @@
                     const originalSize = buffer.byteLength;
 
                     // Load the GLB
-                    const loader = new THREE.GLTFLoader();
+                    const loader = new GLTFLoader();
                     const gltf = await new Promise((resolve, reject) => {
                         loader.parse(buffer, '', resolve, reject);
                     });
@@ -77,17 +79,18 @@
                     const optimizedGeometry = optimizeGeometry(mesh.geometry);
 
                     // Create new mesh with optimized geometry
-                    const optimizedMesh = new THREE.Mesh(optimizedGeometry, mesh.material);
+                    const optimizedMesh = new THREE.Mesh(optimizedGeometry);
                     const scene = new THREE.Scene();
                     scene.add(optimizedMesh);
 
                     // Export back to GLB
-                    const exporter = new THREE.GLTFExporter();
+                    const exporter = new GLTFExporter();
                     const optimizedGLB = await new Promise((resolve) => {
                         exporter.parse(scene, resolve, { 
                             binary: true,
                             includeCustomExtensions: false,
-                            embedImages: false
+                            embedImages: false,
+                            forceIndices: true
                         });
                     });
 
@@ -109,6 +112,7 @@
                     });
                 } catch (error) {
                     console.error('Processing failed:', error);
+                    alert('Error processing file: ' + error.message);
                 } finally {
                     setProcessing(false);
                 }
