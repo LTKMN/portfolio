@@ -1,0 +1,197 @@
+import React, { useState } from 'react';
+import { Upload, Copy, Check } from 'lucide-react';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter';
+import * as THREE from 'three';
+
+const GLBConverter = () => {
+  const [file, setFile] = useState(null);
+  const [result, setResult] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [processing, setProcessing] = useState(false);
+
+  const compressGLB = async (buffer) => {
+    // Setup loaders
+    const dracoLoader = new DRACOLoader();
+    const gltfLoader = new GLTFLoader();
+    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+    gltfLoader.setDRACOLoader(dracoLoader);
+
+    // Load GLB
+    const gltf = await new Promise((resolve, reject) => {
+      gltfLoader.parse(buffer, '', resolve, reject);
+    });
+
+    // Get mesh and optimize
+    const mesh = gltf.scenes[0].children[0];
+    const geometry = mesh.geometry;
+
+    // Quantize attributes to reduce size
+    const positions = geometry.attributes.position.array;
+    const normals = geometry.attributes.normal?.array;
+
+    // Convert to 16-bit integers for positions
+    const scale = 1000; // Scale factor for precision
+    const quantizedPositions = new Uint16Array(positions.length);
+    for (let i = 0; i < positions.length; i++) {
+      quantizedPositions[i] = Math.round(positions[i] * scale) + 32768;
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(quantizedPositions, 3));
+
+    // Simplify normals to 8-bit
+    if (normals) {
+      const quantizedNormals = new Uint8Array(normals.length);
+      for (let i = 0; i < normals.length; i++) {
+        quantizedNormals[i] = Math.round((normals[i] * 0.5 + 0.5) * 255);
+      }
+      geometry.setAttribute('normal', new THREE.BufferAttribute(quantizedNormals, 3));
+    }
+
+    // Create compressed version
+    const dracoEncoder = new THREE.DRACOEncoder();
+    const encoderSettings = {
+      method: 'edgebreaker',
+      quantization: {
+        position: 12, // Reduced from default
+        normal: 8,    // Minimum for normals
+        color: 8,
+        texcoord: 8,
+        generic: 8
+      },
+      speed: 1, // Slowest but best compression
+      compression_level: 10 // Maximum compression
+    };
+
+    const compressedGeometry = await dracoEncoder.encodeGeometry(geometry, encoderSettings);
+    const compressedMesh = new THREE.Mesh(compressedGeometry);
+    const scene = new THREE.Scene();
+    scene.add(compressedMesh);
+
+    // Export back to GLB with minimal settings
+    return new Promise((resolve) => {
+      const exporter = new GLTFExporter();
+      exporter.parse(scene, 
+        (gltf) => resolve(gltf), 
+        {
+          binary: true,
+          embedImages: false,
+          includeCustomExtensions: false,
+          truncateDrawRange: true,
+          forceIndices: true,
+          maxTextureSize: 64, // Limit texture size if any
+        }
+      );
+    });
+  };
+
+  const handleFile = async (event) => {
+    const file = event.target.files[0] || event.dataTransfer?.files[0];
+    if (!file || !file.name.toLowerCase().endsWith('.glb')) return;
+    
+    setFile(file);
+    setProcessing(true);
+    
+    try {
+      const buffer = await file.arrayBuffer();
+      const originalSize = buffer.byteLength;
+      
+      // Compress the GLB
+      const compressed = await compressGLB(buffer);
+      
+      // Convert to base64
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(compressed)));
+      const compressedBase64 = base64.replace(/[+/]|=+$/g, '');
+      
+      const stats = {
+        originalSize,
+        compressedSize: compressed.byteLength,
+        encodedLength: compressedBase64.length,
+        willFit: compressedBase64.length <= 2000
+      };
+      
+      setResult({
+        altText: `GLB1|${compressedBase64}`,
+        stats
+      });
+    } catch (error) {
+      console.error('Compression failed:', error);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const copyToClipboard = async () => {
+    if (result?.altText) {
+      await navigator.clipboard.writeText(result.altText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4">GLB to Bluesky Converter</h1>
+      
+      {/* Upload */}
+      <div 
+        className="border-2 border-dashed rounded-lg p-8 text-center mb-6"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          handleFile(e);
+        }}
+      >
+        <input
+          type="file"
+          accept=".glb"
+          onChange={handleFile}
+          className="hidden"
+          id="file-upload"
+        />
+        <label htmlFor="file-upload" className="cursor-pointer">
+          <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+          <div className="text-sm text-gray-600">
+            {processing ? 'Compressing...' : 'Drop GLB file here or click to upload'}
+          </div>
+        </label>
+      </div>
+
+      {/* Results */}
+      {result && (
+        <div className="space-y-4">
+          {/* Stats */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div>Original size: {(result.stats.originalSize / 1024).toFixed(2)} KB</div>
+            <div>Compressed size: {(result.stats.compressedSize / 1024).toFixed(2)} KB</div>
+            <div>Encoded length: {result.stats.encodedLength} characters</div>
+            <div className={result.stats.willFit ? "text-green-600" : "text-red-600"}>
+              {result.stats.willFit ? "Will fit in alt text" : "Too large for alt text"}
+            </div>
+          </div>
+
+          {/* Alt Text */}
+          {result.stats.willFit && (
+            <div className="border rounded-lg p-4">
+              <div className="flex justify-between items-center mb-2">
+                <div className="font-medium">Encoded Alt Text</div>
+                <button
+                  onClick={copyToClipboard}
+                  className="flex items-center text-sm text-gray-600 hover:text-gray-900"
+                >
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span className="ml-1">{copied ? 'Copied!' : 'Copy'}</span>
+                </button>
+              </div>
+              <div className="text-sm text-gray-600 break-all">
+                {result.altText.slice(0, 100)}...
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default GLBConverter;
