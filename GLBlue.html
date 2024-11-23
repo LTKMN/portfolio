@@ -4,11 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GLB to Bluesky Converter</title>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.161.0/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gltf-pipeline/3.0.5/gltf-pipeline.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.19.0/meshopt_decoder.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.19.0/meshopt_encoder.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
 </head>
 <body>
@@ -17,6 +18,53 @@
     <script type="text/babel">
         const { useState } = React;
 
+        // MeshOpt compression wrapper
+        const optimizeMesh = async (geometry) => {
+            const vertices = geometry.attributes.position.array;
+            const indices = geometry.index ? geometry.index.array : null;
+            
+            // Initialize meshoptimizer
+            await MeshoptEncoder.ready;
+            
+            // Optimize vertices
+            const vertexCount = vertices.length / 3;
+            const optimizedVertices = new Float32Array(vertices);
+            const vertexResult = MeshoptEncoder.encodeVertexBuffer(
+                optimizedVertices, 
+                vertexCount,
+                12, // 3 floats * 4 bytes
+                {
+                    bits: 14, // Precision bits
+                    quality: 1  // Max quality
+                }
+            );
+
+            // Optimize indices if they exist
+            let indexResult = null;
+            if (indices) {
+                const optimizedIndices = new Uint32Array(indices);
+                indexResult = MeshoptEncoder.encodeIndexBuffer(
+                    optimizedIndices,
+                    indices.length,
+                    1 // Max vertex reuse
+                );
+            }
+
+            // Create optimized geometry
+            const optimizedGeometry = new THREE.BufferGeometry();
+            optimizedGeometry.setAttribute(
+                'position',
+                new THREE.Float32BufferAttribute(optimizedVertices, 3)
+            );
+            if (indexResult) {
+                optimizedGeometry.setIndex(
+                    new THREE.Uint32BufferAttribute(indexResult, 1)
+                );
+            }
+
+            return optimizedGeometry;
+        };
+
         function App() {
             const [file, setFile] = useState(null);
             const [result, setResult] = useState(null);
@@ -24,7 +72,8 @@
             const [processing, setProcessing] = useState(false);
 
             const handleFile = async (event) => {
-                const file = event.target.files[0] || event.dataTransfer?.files[0];
+                event.preventDefault();
+                const file = event.target.files?.[0] || event.dataTransfer?.files?.[0];
                 if (!file || !file.name.toLowerCase().endsWith('.glb')) return;
                 
                 setFile(file);
@@ -33,15 +82,40 @@
                 try {
                     const buffer = await file.arrayBuffer();
                     const originalSize = buffer.byteLength;
+
+                    // Load GLB into Three.js
+                    const loader = new THREE.GLTFLoader();
+                    const gltf = await new Promise((resolve, reject) => {
+                        loader.parse(buffer, '', resolve, reject);
+                    });
+
+                    // Get the first mesh
+                    const mesh = gltf.scenes[0].children[0];
                     
-                    // Convert to base64 for now (will add compression later)
-                    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+                    // Optimize the geometry
+                    const optimizedGeometry = await optimizeMesh(mesh.geometry);
+                    
+                    // Create new mesh and scene
+                    const optimizedMesh = new THREE.Mesh(optimizedGeometry, mesh.material);
+                    const scene = new THREE.Scene();
+                    scene.add(optimizedMesh);
+
+                    // Export back to GLB
+                    const exporter = new THREE.GLTFExporter();
+                    const optimizedGLB = await new Promise((resolve) => {
+                        exporter.parse(scene, resolve, { binary: true });
+                    });
+
+                    // Convert to base64
+                    const base64 = btoa(String.fromCharCode(...new Uint8Array(optimizedGLB)));
                     const compressedBase64 = base64.replace(/[+/]|=+$/g, '');
                     
                     const stats = {
                         originalSize,
+                        compressedSize: optimizedGLB.byteLength,
                         encodedLength: compressedBase64.length,
-                        willFit: compressedBase64.length <= 2000
+                        willFit: compressedBase64.length <= 2000,
+                        compressionRatio: ((optimizedGLB.byteLength / originalSize) * 100).toFixed(1)
                     };
                     
                     setResult({
@@ -86,8 +160,13 @@
                         <label htmlFor="file-upload" className="cursor-pointer">
                             <div className="text-4xl mb-2">⬆️</div>
                             <div className="text-sm text-gray-600">
-                                {processing ? 'Processing...' : 'Drop GLB file here or click to upload'}
+                                {processing ? 'Optimizing mesh...' : 'Drop GLB file here or click to upload'}
                             </div>
+                            {file && (
+                                <div className="mt-2 text-sm text-gray-500">
+                                    Selected: {file.name}
+                                </div>
+                            )}
                         </label>
                     </div>
 
@@ -97,6 +176,8 @@
                             {/* Stats */}
                             <div className="bg-gray-50 p-4 rounded-lg">
                                 <div>Original size: {(result.stats.originalSize / 1024).toFixed(2)} KB</div>
+                                <div>Compressed size: {(result.stats.compressedSize / 1024).toFixed(2)} KB</div>
+                                <div>Compression ratio: {result.stats.compressionRatio}%</div>
                                 <div>Encoded length: {result.stats.encodedLength} characters</div>
                                 <div className={result.stats.willFit ? "text-green-600" : "text-red-600"}>
                                     {result.stats.willFit ? "Will fit in alt text" : "Too large for alt text"}
@@ -136,7 +217,9 @@
             );
         }
 
-        ReactDOM.render(<App />, document.getElementById('root'));
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
