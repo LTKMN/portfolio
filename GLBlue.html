@@ -10,6 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.161.0/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/exporters/GLTFExporter.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/utils/BufferGeometryUtils.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
 </head>
 <body>
@@ -24,6 +25,38 @@
             const [copied, setCopied] = useState(false);
             const [processing, setProcessing] = useState(false);
 
+            const optimizeGeometry = (geometry) => {
+                // Convert to non-indexed if it isn't already
+                let nonIndexed = geometry.index !== null ? 
+                    geometry.toNonIndexed() : 
+                    geometry.clone();
+
+                // Merge vertices that are very close to each other
+                nonIndexed = THREE.BufferGeometryUtils.mergeVertices(nonIndexed, 0.001);
+
+                // Optimize normal and position precision
+                const positions = nonIndexed.attributes.position.array;
+                const normals = nonIndexed.attributes.normal?.array;
+
+                // Quantize positions to 16-bit
+                const quantizedPositions = new Uint16Array(positions.length);
+                for (let i = 0; i < positions.length; i++) {
+                    quantizedPositions[i] = Math.round((positions[i] + 1) * 32767);
+                }
+                nonIndexed.setAttribute('position', new THREE.Uint16BufferAttribute(quantizedPositions, 3));
+
+                // Quantize normals to 8-bit
+                if (normals) {
+                    const quantizedNormals = new Uint8Array(normals.length);
+                    for (let i = 0; i < normals.length; i++) {
+                        quantizedNormals[i] = Math.round((normals[i] * 0.5 + 0.5) * 255);
+                    }
+                    nonIndexed.setAttribute('normal', new THREE.Uint8BufferAttribute(quantizedNormals, 3));
+                }
+
+                return nonIndexed;
+            };
+
             const processFile = async () => {
                 if (!file) return;
                 
@@ -32,17 +65,42 @@
                 try {
                     const buffer = await file.arrayBuffer();
                     const originalSize = buffer.byteLength;
-                    
-                    // Simple base64 conversion for now - let's make sure this works first
-                    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+
+                    // Load the GLB
+                    const loader = new THREE.GLTFLoader();
+                    const gltf = await new Promise((resolve, reject) => {
+                        loader.parse(buffer, '', resolve, reject);
+                    });
+
+                    // Get the first mesh and optimize its geometry
+                    const mesh = gltf.scenes[0].children[0];
+                    const optimizedGeometry = optimizeGeometry(mesh.geometry);
+
+                    // Create new mesh with optimized geometry
+                    const optimizedMesh = new THREE.Mesh(optimizedGeometry, mesh.material);
+                    const scene = new THREE.Scene();
+                    scene.add(optimizedMesh);
+
+                    // Export back to GLB
+                    const exporter = new THREE.GLTFExporter();
+                    const optimizedGLB = await new Promise((resolve) => {
+                        exporter.parse(scene, resolve, { 
+                            binary: true,
+                            includeCustomExtensions: false,
+                            embedImages: false
+                        });
+                    });
+
+                    // Convert to base64
+                    const base64 = btoa(String.fromCharCode(...new Uint8Array(optimizedGLB)));
                     const compressedBase64 = base64.replace(/[+/]|=+$/g, '');
                     
                     const stats = {
                         originalSize,
-                        compressedSize: buffer.byteLength,
+                        compressedSize: optimizedGLB.byteLength,
                         encodedLength: compressedBase64.length,
                         willFit: compressedBase64.length <= 2000,
-                        compressionRatio: 100
+                        compressionRatio: ((optimizedGLB.byteLength / originalSize) * 100).toFixed(1)
                     };
                     
                     setResult({
@@ -61,7 +119,7 @@
                 const newFile = event.target.files?.[0] || event.dataTransfer?.files?.[0];
                 if (!newFile || !newFile.name.toLowerCase().endsWith('.glb')) return;
                 setFile(newFile);
-                setResult(null); // Clear previous result
+                setResult(null);
             };
 
             const copyToClipboard = async () => {
