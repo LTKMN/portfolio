@@ -50,26 +50,69 @@
                     resolve();
                 };
                 script.onerror = (error) => {
-                    debugLog(`Error loading script: ${url}`);
-                    reject(error);
+                    debugLog(`Error loading script: ${url} - ${error}`);
+                    reject(new Error(`Failed to load ${url}`));
                 };
                 document.body.appendChild(script);
             });
         }
 
         async function initializeApp() {
+            const scripts = [
+                {
+                    name: 'React',
+                    url: 'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js'
+                },
+                {
+                    name: 'ReactDOM',
+                    url: 'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js'
+                },
+                {
+                    name: 'Babel',
+                    url: 'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js'
+                },
+                {
+                    name: 'Three.js',
+                    url: 'https://unpkg.com/three@0.161.0/build/three.js'
+                },
+                {
+                    name: 'GLTFLoader',
+                    url: 'https://unpkg.com/three@0.161.0/examples/js/loaders/GLTFLoader.js'
+                },
+                {
+                    name: 'GLTFExporter',
+                    url: 'https://unpkg.com/three@0.161.0/examples/js/exporters/GLTFExporter.js'
+                }
+            ];
+
             try {
-                // Load dependencies in sequence
-                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js');
-                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js');
-                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js');
-                
-                // Load Three.js and its extras from CDN
-                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/0.161.0/three.min.js');
-                await loadScript('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/GLTFLoader.min.js');
-                await loadScript('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/exporters/GLTFExporter.min.js');
+                for (const script of scripts) {
+                    try {
+                        await loadScript(script.url);
+                    } catch (error) {
+                        debugLog(`Failed to load ${script.name}. Trying fallback...`);
+                        // Add fallback URLs if the primary ones fail
+                        const fallbacks = {
+                            'Three.js': 'https://cdnjs.cloudflare.com/ajax/libs/three.js/161/three.min.js',
+                            'GLTFLoader': 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/GLTFLoader.js',
+                            'GLTFExporter': 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/exporters/GLTFExporter.js'
+                        };
+                        
+                        if (fallbacks[script.name]) {
+                            await loadScript(fallbacks[script.name]);
+                        } else {
+                            throw error;
+                        }
+                    }
+                }
 
                 debugLog('All scripts loaded, initializing React app...');
+
+                // Verify Three.js loaded correctly
+                if (typeof THREE === 'undefined') {
+                    throw new Error('THREE is not defined after loading scripts');
+                }
+                debugLog('THREE.js verified loaded');
 
                 const appScript = document.createElement('script');
                 appScript.type = 'text/babel';
@@ -78,7 +121,13 @@
                     
                     function App() {
                         const [file, setFile] = React.useState(null);
+                        const [threeLoaded, setThreeLoaded] = React.useState(false);
                         
+                        React.useEffect(() => {
+                            setThreeLoaded(typeof THREE !== 'undefined');
+                            debugLog('Three.js availability checked in component: ' + (typeof THREE !== 'undefined'));
+                        }, []);
+
                         const handleFileSelect = (event) => {
                             const selectedFile = event.target.files?.[0];
                             if (selectedFile) {
@@ -92,22 +141,29 @@
                                 <h1 className="text-2xl font-bold mb-6 text-center">GLB to Text Converter</h1>
                                 
                                 <div className="bg-white p-6 rounded-lg shadow-sm">
-                                    <input 
-                                        type="file"
-                                        accept=".glb"
-                                        onChange={handleFileSelect}
-                                        className="block w-full text-sm text-gray-500
-                                        file:mr-4 file:py-2 file:px-4
-                                        file:rounded-full file:border-0
-                                        file:text-sm file:font-semibold
-                                        file:bg-blue-50 file:text-blue-700
-                                        hover:file:bg-blue-100"
-                                    />
-                                    
-                                    {file && (
-                                        <div className="mt-4 text-sm text-gray-600">
-                                            Selected file: {file.name}
-                                        </div>
+                                    {threeLoaded ? (
+                                        <>
+                                            <div className="mb-4 text-green-600">✓ Three.js loaded successfully</div>
+                                            <input 
+                                                type="file"
+                                                accept=".glb"
+                                                onChange={handleFileSelect}
+                                                className="block w-full text-sm text-gray-500
+                                                file:mr-4 file:py-2 file:px-4
+                                                file:rounded-full file:border-0
+                                                file:text-sm file:font-semibold
+                                                file:bg-blue-50 file:text-blue-700
+                                                hover:file:bg-blue-100"
+                                            />
+                                            
+                                            {file && (
+                                                <div className="mt-4 text-sm text-gray-600">
+                                                    Selected file: {file.name}
+                                                </div>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div className="text-red-600">✗ Three.js failed to load</div>
                                     )}
                                 </div>
                             </div>
@@ -137,6 +193,14 @@
 
         initializeApp().catch(error => {
             debugLog(`Fatal error during initialization: ${error.message}`);
+            // Show error in the UI
+            document.getElementById('root').innerHTML = `
+                <div class="max-w-2xl mx-auto p-6">
+                    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                        Failed to initialize application: ${error.message}
+                    </div>
+                </div>
+            `;
         });
     </script>
 </body>
